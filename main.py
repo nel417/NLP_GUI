@@ -1,8 +1,97 @@
 import spacy
 from spacytextblob.spacytextblob import SpacyTextBlob
+import json
+import random
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn import svm
+from sklearn.tree import DecisionTreeClassifier
+
+file_name = "books2.json"
 
 en_core_web = spacy.load("en_core_web_sm")
 en_core_web.add_pipe('spacytextblob')
+
+
+class Sentiment:
+    NEGATIVE = "NEGATIVE"
+    NEUTRAL = "NEUTRAL"
+    POSITIVE = "POSITIVE"
+
+
+class Review:
+    def __init__(self, text, score):
+        self.text = text
+        self.score = score
+        self.sentiment = self.get_sentiment()
+
+    def get_sentiment(self):
+        if self.score <= 2:
+            return Sentiment.NEGATIVE
+        elif self.score == 3:
+            return Sentiment.NEUTRAL
+        else:
+            return Sentiment.POSITIVE
+
+
+class ReviewContainer:
+    def __init__(self, reviews):
+        self.reviews = reviews
+
+    def get_text(self):
+        return [x.text for x in self.reviews]
+
+    def get_labels(self):
+        return [x.sentiment for x in self.reviews]
+
+    def even(self):
+        negative = list(filter(lambda x: x.sentiment == Sentiment.NEGATIVE, self.reviews))
+        positive = list(filter(lambda x: x.sentiment == Sentiment.POSITIVE, self.reviews))
+        #         print(len(negative))
+        #         print(len(positive))
+        shrink_positive = positive[:len(negative)]
+        self.reviews = negative + shrink_positive
+        random.shuffle(self.reviews)
+
+
+reviews = []
+with open(file_name) as f:
+    for line in f:
+        review = json.loads(line)
+        reviews.append(Review(review["reviewText"], review["overall"]))
+
+
+def sentiment_from_scratch(t):
+    Train, Test = train_test_split(reviews, test_size=0.33, random_state=42)
+    container_train = ReviewContainer(Train)
+    container_test = ReviewContainer(Test)
+    container_train.even()
+    x_train = container_train.get_text()
+    y_train = container_train.get_labels()
+    container_test.even()
+    x_test = container_test.get_text()
+    y_test = container_test.get_labels()
+    vec = TfidfVectorizer()
+    train_x_vec = vec.fit_transform(x_train)
+    test_x_vec = vec.transform(x_test)
+    y_train.count(Sentiment.NEGATIVE)
+    classify = svm.SVC(kernel='linear')
+    classify.fit(train_x_vec, y_train)
+    classify.predict(test_x_vec[0])
+    classify_dec = DecisionTreeClassifier()
+    from sklearn.metrics import f1_score
+    classify_dec.fit(train_x_vec, y_train)
+    classify_dec.predict(test_x_vec[8])
+    new_test = vec.transform([t])
+    output = classify.predict(new_test)
+    print(classify.score(test_x_vec, y_test))
+    print(classify_dec.score(test_x_vec, y_test))
+    return_score = f1_score(y_test,
+                            classify.predict(test_x_vec),
+                            average=None,
+                            labels=[Sentiment.POSITIVE, Sentiment.NEUTRAL, Sentiment.NEGATIVE])
+
+    return output, return_score
 
 
 def get_text_characteristics(sentence):
